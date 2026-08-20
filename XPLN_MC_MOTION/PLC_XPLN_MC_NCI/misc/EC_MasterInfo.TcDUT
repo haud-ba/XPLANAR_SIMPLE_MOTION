@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.11">
+  <DUT Name="EC_MasterInfo" Id="{5275244a-6d1b-4ab3-a495-fee922f9c47c}">
+    <Declaration><![CDATA[TYPE EC_MasterInfo :
+STRUCT
+	FrmxWcState 	AT %I*: ARRAY[0..0] OF UINT;
+	SlaveCount 		AT %I*: UINT;
+	DevState 			AT %I*: UINT;
+	DevId 				AT %I*: UINT;
+	AmsNetId 			AT %I*: AMSNETID;
+	CfgSlaveCount AT %I*: UINT;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

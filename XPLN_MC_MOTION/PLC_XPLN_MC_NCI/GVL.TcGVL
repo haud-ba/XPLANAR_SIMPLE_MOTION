@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.13">
+  <GVL Name="GVL" Id="{a37c76f9-aa5e-4715-918b-df03486e923f}">
+    <Declaration><![CDATA[VAR_GLOBAL
+  fbMoverCtrl         : ARRAY[1..MAX_XPLANAR_MOVERS] OF fb_MoverCtrl;
+  MoverCtrl           : ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_CTRL;
+  MoverState          : ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_STATE;
+  MoveData            : ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVE_DATA;
+  MoverInfo           : ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_INFO;
+
+  fbEventLogger       : Tc3_EventLogger.FB_TcEventLogger;
+
+  NcAxis              : ARRAY[1..3] OF AXIS_REF;
+END_VAR
+VAR_GLOBAL CONSTANT
+	MAX_XPLANAR_MOVERS	: INT :=  2;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

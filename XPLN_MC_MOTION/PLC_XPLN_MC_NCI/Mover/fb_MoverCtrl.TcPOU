@@ -1,0 +1,892 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.13">
+  <POU Name="fb_MoverCtrl" Id="{e6f5a859-179d-4121-a0cc-1f6aba83c905}" SpecialFunc="None">
+    <Declaration><![CDATA[//---------------------------------------------------------------------------------------------------------------
+//
+//  HAUD 2023.12.18
+//
+//  - XTS_TRAINING
+//  - example project for setting up transport layer
+//
+//
+//  fb_MoverCtrl
+//  - accepts orders (E_MOVER_CTRL) via cyclic struct interface to execute
+//  - interface struct  to extern control
+//
+//
+//---------------------------------------------------------------------------------------------------------------
+// This SOFTWARE is provided as an Exemple by THE PROVIDER "as is" and "with all faults." THE PROVIDER makes no 
+// representations or warranties of any kind concerning the safety, suitability, lack of viruses, inaccuracies, 
+// typographical errors, or other harmful components of this SOFTWARE. There are inherent dangers in the use of 
+// any software, and you are solely responsible for determining whether this SOFTWARE is compatible with your 
+// equipment and other software installed on your equipment. You are also solely responsible for the protection 
+// of your equipment and backup of your data, and THE PROVIDER will not be liable for any damages you may suffer 
+// in connection with using, modifying, or distributing this SOFTWARE.
+//---------------------------------------------------------------------------------------------------------------
+FUNCTION_BLOCK fb_MoverCtrl EXTENDS fb_Mover
+VAR
+  // Ctrl and State for executing commands
+  _stCtrl           : REFERENCE TO ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_CTRL;
+  _stState          : REFERENCE TO ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_STATE;
+
+  // data structures to use with commands
+  _stMoveData       : REFERENCE TO ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVE_DATA;
+
+  // external setpoint generator access to mover
+	_pAxis                : POINTER TO ARRAY[1..3] OF AXIS_REF;
+
+  _fbPower     : ARRAY[1..3] OF Tc2_MC2.MC_Power;
+  _fbReset     : ARRAY[1..3] OF Tc2_MC2.MC_Reset;
+  _fbSetPos    : ARRAY[1..3] OF Tc2_MC2.MC_SetPosition;
+
+  // AXIS_REFs are feeding into here
+	stPosVector,
+	stVeloVector,
+	stAccVector		        : MoverVector;	
+
+  Extfeedback           : MC_PlanarFeedback;
+  ExtOptions            : ST_ExternalSetpointGenerationOptions;
+
+  _eCmd,
+  _eCmdOld          : E_MOVER_CTRL;
+
+  _eState           : E_MOVER_STATE;
+
+  _eResult          : E_PROGRESS;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF NOT Check() THEN RETURN; END_IF
+
+// copy to local for debug
+_eCmd                         := _stCtrl[_nMoverId].Cmd;
+
+// cyclic check for command change
+// get state for cmd
+IF (_eCmd <> _eCmdOld)
+THEN
+  // get matching sdtate for Ctrl.Cmd
+  _eState                     := Cmd(_eCmd);
+  _eCmdOld                    := _eCmd;
+END_IF
+
+
+CASE _eResult
+OF
+  E_PROGRESS.PROGRESS_INVALID:
+    _stState[_nMoverId].State := E_MOVER_STATE.MOVER_NULL;
+
+  E_PROGRESS.PROGRESS_ERROR:
+    _stState[_nMoverId].State := _eState + E_PROGRESS.PROGRESS_ERROR;
+
+  E_PROGRESS.PROGRESS_DONE:
+    _stState[_nMoverId].State := _eState + E_PROGRESS.PROGRESS_DONE;
+
+ELSE
+  // work in progress
+  // update progress for extern use
+  _stState[_nMoverId].State   := _eState + _eResult;
+
+  CASE _eState
+  OF
+    E_MOVER_STATE.MOVER_ENABLE:
+      _eResult                := Enable(TRUE);
+  
+    E_MOVER_STATE.MOVER_DISABLE:
+      _eResult                := Disable(TRUE);
+  
+    E_MOVER_STATE.MOVER_MOVE_TO_POS:
+      _eResult                := MoveToPos(TRUE, _stMoveData[_nMoverId]);
+  
+    E_MOVER_STATE.MOVER_HALT:
+      _eResult                := Halt(TRUE, _stMoveData[_nMoverId]);
+  
+    E_MOVER_STATE.MOVER_RESET:
+      _eResult                := Reset(TRUE);
+
+    E_MOVER_STATE.MOVER_EXT_DISABLE_AXIS:
+      _eResult          := Ext_DisableAxis(TRUE);
+  
+    E_MOVER_STATE.MOVER_EXT_ENABLE_AXIS:
+      _eResult          := Ext_EnableAxis(TRUE);
+  
+    E_MOVER_STATE.MOVER_EXT_SET_POSITION:
+      _eResult          := Ext_SetPosition(TRUE);
+  
+    E_MOVER_STATE.MOVER_EXT_START:
+      _eResult          := Ext_StartExtSetpoint(TRUE);
+  
+    E_MOVER_STATE.MOVER_EXT_STOP:
+      _eResult          := Ext_StopExtSetpoint(TRUE);
+
+  ELSE
+      _eResult                := E_PROGRESS.PROGRESS_INVALID;
+  END_CASE
+END_CASE
+
+
+]]></ST>
+    </Implementation>
+    <Folder Name="private" Id="{258f0b35-b05c-4f01-a3fc-edc5df7e8d88}" />
+    <Folder Name="properties" Id="{5a8b437b-ee9d-4787-bbec-edf7399fab97}" />
+    <Method Name="Check" Id="{2ee4a3ac-6db7-411d-8353-9d32d3803283}" FolderPath="private\">
+      <Declaration><![CDATA[METHOD PRIVATE Check : BOOL
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[
+// The thing that should not be
+
+IF NOT (_nMoverId > 0)
+THEN
+  _sState                     := 'Mover: missing ID';
+  RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(_stCtrl)
+THEN
+  _sState                     := 'Ctrl: missing pointer';
+  RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(_stState)
+THEN
+  _sState                     := 'State: missing pointer';
+  RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(_Mover)
+THEN
+  _sState                     := 'Mover: missing pointer';
+  RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(_stInfo)
+THEN
+  _sState                     := '_stInfo: missing pointer';
+  RETURN;
+END_IF
+
+IF NOT __ISVALIDREF(_stMoveData)
+THEN
+  _sState                     := '_stMoveData: missing pointer';
+  RETURN;
+END_IF
+
+_sState                       := 'CHECK_DONE';
+Check                         := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Cmd" Id="{81245bd4-fb55-4d29-8ac8-fd4c2f9ce918}" FolderPath="private\">
+      <Declaration><![CDATA[METHOD PRIVATE Cmd : E_MOVER_STATE
+VAR_INPUT
+  Ctrl      : E_MOVER_CTRL;
+END_VAR
+VAR_INST
+  _eState   : E_MOVER_STATE;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Check() THEN Cmd := E_MOVER_STATE.MOVER_NULL;  RETURN; END_IF
+
+
+CASE Ctrl
+OF
+  E_MOVER_CTRL.MOVER_ENABLE:
+    _eResult          := Enable(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_ENABLE;
+
+  E_MOVER_CTRL.MOVER_DISABLE:
+    _eResult          := Disable(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_DISABLE;
+
+  E_MOVER_CTRL.MOVER_MOVE_TO_POS:
+    _eResult          := MoveToPos(FALSE, _stMoveData[_nMoverId]);
+    _eState           := E_MOVER_STATE.MOVER_MOVE_TO_POS;
+
+  E_MOVER_CTRL.MOVER_HALT:
+    _eResult          := Halt(FALSE, _stMoveData[_nMoverId]);
+    _eState           := E_MOVER_STATE.MOVER_HALT;
+
+  E_MOVER_CTRL.MOVER_RESET:
+    _eResult          := Reset(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_RESET;
+
+  E_MOVER_CTRL.MOVER_EXT_DISABLE_AXIS:
+    _eResult          := Ext_DisableAxis(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_EXT_DISABLE_AXIS;
+
+  E_MOVER_CTRL.MOVER_EXT_ENABLE_AXIS:
+    _eResult          := Ext_EnableAxis(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_EXT_ENABLE_AXIS;
+
+  E_MOVER_CTRL.MOVER_EXT_SET_POSITION:
+    _eResult          := Ext_SetPosition(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_EXT_SET_POSITION;
+
+  E_MOVER_CTRL.MOVER_EXT_START:
+    _eResult          := Ext_StartExtSetpoint(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_EXT_START;
+
+  E_MOVER_CTRL.MOVER_EXT_STOP:
+    _eResult          := Ext_StopExtSetpoint(FALSE);
+    _eState           := E_MOVER_STATE.MOVER_EXT_STOP;
+
+
+ELSE
+    _eResult          := E_PROGRESS.PROGRESS_INVALID; 
+    _eState           := E_MOVER_STATE.MOVER_NULL;
+END_CASE
+
+Cmd                   := _eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="Ctrl" Id="{29b322c2-ac02-482a-9cba-90f106d7a2cf}" FolderPath="properties\">
+      <Declaration><![CDATA[PROPERTY Ctrl : REFERENCE TO ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_CTRL
+]]></Declaration>
+      <Set Name="Set" Id="{8275e8bf-da64-43b2-ac26-73459c1c107d}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_stCtrl ref= Ctrl;
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Method Name="Ext_DisableAxis" Id="{d8c80ed5-9fc0-4793-832a-3aea99bc9e69}">
+      <Declaration><![CDATA[METHOD Ext_DisableAxis : e_progress
+VAR_INPUT
+  execute   : BOOL;
+END_VAR
+VAR_INST
+  _nAxis    : uint;
+  _nErrorId : UDINT;
+  _idx      : UINT;
+  _eState   : e_progress;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Execute THEN _eState  := E_PROGRESS.PROGRESS_INIT; END_IF 
+IF NOT Check() THEN Ext_DisableAxis  := E_PROGRESS.PROGRESS_ERROR; RETURN; END_IF
+
+
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_INIT:
+    IF Execute
+    THEN
+      _nErrorId               := 0;
+      _nAxis                  := 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_BUSY:
+    _fbPower[_nAxis].Enable   := FALSE;
+
+    IF NOT (_pAxis^[_nAxis].Status.ControlLoopClosed)
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_PREPARE;
+    END_IF
+    FOR _idx := 1 TO 3
+    DO
+      _pAxis^[_idx]();
+      _fbPower[_idx](
+              Axis:= _pAxis^[_idx], 
+              Enable:= FALSE, 
+              Enable_Positive:= TRUE, 
+              Enable_Negative:= TRUE, 
+              Override:= , 
+              BufferMode:= , 
+              Options:= , 
+              Status=> , 
+              Busy=> , 
+              Error=> , 
+              ErrorID=> _nErrorId);
+    END_FOR
+
+ END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_PREPARE:
+    IF (_nAxis > 2)
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_DONE;
+    ELSE
+      _nAxis                  := _nAxis + 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+Ext_DisableAxis                       := _eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Ext_EnableAxis" Id="{22b59b5d-5c68-4855-8064-b947d154e8cf}">
+      <Declaration><![CDATA[METHOD Ext_EnableAxis : e_progress
+VAR_INPUT
+  execute   : BOOL;
+END_VAR
+VAR_INST
+  _nAxis    : uint;
+  _nErrorId : UDINT;
+  _idx      : UINT;
+  _eState   : e_progress;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Execute THEN _eState  := E_PROGRESS.PROGRESS_INIT; END_IF 
+IF NOT Check() THEN Ext_EnableAxis  := E_PROGRESS.PROGRESS_ERROR; RETURN; END_IF
+
+
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_INIT:
+    IF Execute
+    THEN
+      _nErrorId               := 0;
+      _nAxis                  := 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_BUSY:
+    _fbPower[_nAxis].Enable   := TRUE;
+
+    IF (_pAxis^[_nAxis].Status.ControlLoopClosed)
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_PREPARE;
+    END_IF
+    FOR _idx := 1 TO 3
+    DO
+      _pAxis^[_idx]();
+      _fbPower[_idx](
+              Axis:= _pAxis^[_idx], 
+              Enable:= TRUE, 
+              Enable_Positive:= TRUE, 
+              Enable_Negative:= TRUE, 
+              Override:= 100.0, 
+              BufferMode:= , 
+              Options:= , 
+              Status=> , 
+              Busy=> , 
+              Error=> , 
+              ErrorID=> _nErrorId);
+    END_FOR
+
+ END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_PREPARE:
+    IF (_nAxis > 2)
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_DONE;
+    ELSE
+      _nAxis                  := _nAxis + 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+Ext_EnableAxis                       := _eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Ext_SetPosition" Id="{d54eb108-ec17-49c8-9635-8fed6ef3a22f}">
+      <Declaration><![CDATA[METHOD Ext_SetPosition : e_progress
+VAR_INPUT
+  Execute             : BOOL;
+END_VAR
+VAR_INST
+  _rSetPos            : ARRAY[1..3] OF LREAL;
+  _ndx                : udint;
+  _nAxis              : UDINT;
+  _nErrorId           : UDINT;
+  _eState             : E_PROGRESS;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Execute THEN _eState  := E_PROGRESS.PROGRESS_INIT; END_IF 
+IF NOT Check() THEN Ext_SetPosition   := E_PROGRESS.PROGRESS_ERROR; RETURN; END_IF
+
+
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_INIT:
+    IF Execute
+    THEN
+      _rSetPos[1]               := 0.0;
+      _rSetPos[2]               := 0.0;
+      _rSetPos[3]               := 0.0;
+
+      _nErrorId                 := 0;
+      _nAxis                    := 1;
+      _eState                   := E_PROGRESS.PROGRESS_BUSY;
+
+      FOR _ndx := 1 TO 3
+      DO
+        _fbSetPos[_ndx](
+                    Axis:= _pAxis^[_ndx], 
+                    Execute:= FALSE, 
+                    Position:= 0.0);
+      END_FOR
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_BUSY:
+    _fbSetPos[_nAxis](
+                Axis:= _pAxis^[_nAxis], 
+                Execute:= TRUE, 
+                Position:= _rSetPos[_nAxis], 
+                Mode:= , 
+                Options:= , 
+                Done=> , 
+                Busy=> , 
+                Error=> , 
+                ErrorID=> );
+
+    IF _fbSetPos[_nAxis].Done
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_PREPARE;
+      _fbSetPos[_nAxis](
+                Axis:= _pAxis^[_nAxis], 
+                Execute:= FALSE);
+    END_IF 
+
+  E_PROGRESS.PROGRESS_PREPARE:
+    IF (_nAxis > 2)
+    THEN
+      _eState                 := E_PROGRESS.PROGRESS_DONE;
+    ELSE
+      _nAxis                  := _nAxis + 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_STARTUP:
+
+  E_PROGRESS.PROGRESS_CHECK:
+    _eState                     := E_PROGRESS.PROGRESS_OCCUPIED;
+
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_OCCUPIED:
+
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_WORKING:
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_STILL_WORKING:
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+Ext_SetPosition                       := _eState;
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Ext_StartExtSetpoint" Id="{8b1da0a8-10cb-468c-8ed6-8de0a8af3b57}">
+      <Declaration><![CDATA[METHOD Ext_StartExtSetpoint : e_progress
+VAR_INPUT
+  Enable    : Bool;
+END_VAR
+VAR_INST
+  _nAxis    : uint;
+  _nErrorId : UDINT;
+  _idx      : UINT;
+  _eState   : e_progress;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Enable THEN _eState  := E_PROGRESS.PROGRESS_INIT; END_IF 
+IF NOT Check() THEN Ext_StartExtSetpoint  := E_PROGRESS.PROGRESS_ERROR; RETURN; END_IF
+
+
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_INIT:
+    IF Enable
+    THEN
+      _nErrorId               := 0;
+      _nAxis                  := 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_busy:
+    ExtOptions.mode := MC_EXTERNAL_SET_POSITION_MODE.Relative;
+    _Mover.StartExternalSetpointGeneration(Extfeedback,ExtOptions);
+    _eState                 := E_PROGRESS.PROGRESS_WORKING;
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_working:
+    FOR _idx := 1 TO 3
+    DO
+      _pAxis^[_idx]();
+      _fbPower[_idx](
+              Axis:= _pAxis^[_idx], 
+              Enable:= , 
+              Enable_Positive:= TRUE, 
+              Enable_Negative:= TRUE, 
+              Override:= , 
+              BufferMode:= , 
+              Options:= , 
+              Status=> , 
+              Busy=> , 
+              Error=> , 
+              ErrorID=> );
+    END_FOR
+
+    stPosVector.x 	:= _pAxis^[1].NcToPlc.SetPos;
+    stVeloVector.x	:= _pAxis^[1].NcToPlc.SetVelo;
+    stAccVector.x		:= _pAxis^[1].NcToPlc.SetAcc;
+  
+    stPosVector.y 	:= _pAxis^[2].NcToPlc.SetPos;
+    stVeloVector.y	:= _pAxis^[2].NcToPlc.SetVelo;
+    stAccVector.y		:= _pAxis^[2].NcToPlc.SetAcc;
+  
+    stPosVector.z 	:= _pAxis^[3].NcToPlc.SetPos;
+    stVeloVector.z	:= _pAxis^[3].NcToPlc.SetVelo;
+    stAccVector.z		:= _pAxis^[3].NcToPlc.SetAcc;
+  
+    _Mover.SetExternalSetpoint(stPosVector, stVeloVector, stAccVector);
+    _Mover.Update();
+ END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+Ext_StartExtSetpoint                       := _eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Ext_StopExtSetpoint" Id="{0e4f1d41-a248-452a-9d75-341df3ffe0c5}">
+      <Declaration><![CDATA[METHOD Ext_StopExtSetpoint : e_progress
+VAR_INPUT
+  Enable    : Bool;
+END_VAR
+VAR_INST
+  _nAxis    : uint;
+  _nErrorId : UDINT;
+  _idx      : UINT;
+  _eState   : e_progress;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF NOT Enable THEN _eState  := E_PROGRESS.PROGRESS_INIT; END_IF 
+IF NOT Check() THEN Ext_StopExtSetpoint  := E_PROGRESS.PROGRESS_ERROR; RETURN; END_IF
+
+
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_INIT:
+    IF Enable
+    THEN
+      _nErrorId               := 0;
+      _nAxis                  := 1;
+      _eState                 := E_PROGRESS.PROGRESS_BUSY;
+    END_IF
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_busy:
+    _Mover.StopExternalSetpointGeneration(0);
+    _eState                 := E_PROGRESS.PROGRESS_DONE;
+END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+CASE _eState
+OF
+  E_PROGRESS.PROGRESS_working:
+    FOR _idx := 1 TO 3
+    DO
+      _pAxis^[_idx]();
+      _fbPower[_idx](
+              Axis:= _pAxis^[_idx], 
+              Enable:= , 
+              Enable_Positive:= TRUE, 
+              Enable_Negative:= TRUE, 
+              Override:= , 
+              BufferMode:= , 
+              Options:= , 
+              Status=> , 
+              Busy=> , 
+              Error=> , 
+              ErrorID=> );
+    END_FOR
+
+    stPosVector.x 	:= _pAxis^[1].NcToPlc.SetPos;
+    stVeloVector.x	:= _pAxis^[1].NcToPlc.SetVelo;
+    stAccVector.x		:= _pAxis^[1].NcToPlc.SetAcc;
+  
+    stPosVector.y 	:= _pAxis^[2].NcToPlc.SetPos;
+    stVeloVector.y	:= _pAxis^[2].NcToPlc.SetVelo;
+    stAccVector.y		:= _pAxis^[2].NcToPlc.SetAcc;
+  
+    stPosVector.z 	:= _pAxis^[3].NcToPlc.SetPos;
+    stVeloVector.z	:= _pAxis^[3].NcToPlc.SetVelo;
+    stAccVector.z		:= _pAxis^[3].NcToPlc.SetAcc;
+  
+    _Mover.SetExternalSetpoint(stPosVector, stVeloVector, stAccVector);
+
+ END_CASE
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+Ext_StopExtSetpoint                       := _eState;
+]]></ST>
+      </Implementation>
+    </Method>
+    <Property Name="MoveData" Id="{56a9a169-0312-48bb-a424-ffd1a9632224}" FolderPath="properties\">
+      <Declaration><![CDATA[PROPERTY MoveData : reference TO ARRAY[1..MAX_XPLANAR_MOVERS] OF st_move_data]]></Declaration>
+      <Set Name="Set" Id="{5a06abaf-d1d0-45f7-8c7e-9c0c44bcc6bd}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_stMoveData REF= MoveData;
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="pAxis" Id="{c9649b3e-ae85-4285-88b6-75d4a8eabd7f}" FolderPath="properties\">
+      <Declaration><![CDATA[PROPERTY pAxis : pointer to array[1..3] of AXIS_REF]]></Declaration>
+      <Set Name="Set" Id="{a6c75312-88f6-4b3d-a17a-49a7bef78467}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_pAxis := pAxis;
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <Property Name="State" Id="{4d8def2a-4ff6-4bc5-b5e4-16ea30e481d9}" FolderPath="properties\">
+      <Declaration><![CDATA[PROPERTY State : REFERENCE TO ARRAY[1..MAX_XPLANAR_MOVERS] OF ST_MOVER_STATE
+]]></Declaration>
+      <Set Name="Set" Id="{f1b7ccb2-9b4d-4f1e-bd50-ed1c480b0fd3}">
+        <Declaration><![CDATA[VAR
+END_VAR
+]]></Declaration>
+        <Implementation>
+          <ST><![CDATA[_stState ref= State;
+]]></ST>
+        </Implementation>
+      </Set>
+    </Property>
+    <LineIds Name="fb_MoverCtrl">
+      <LineId Id="959" Count="0" />
+      <LineId Id="1189" Count="0" />
+      <LineId Id="965" Count="11" />
+      <LineId Id="1020" Count="15" />
+      <LineId Id="1230" Count="11" />
+      <LineId Id="1248" Count="2" />
+      <LineId Id="1260" Count="1" />
+      <LineId Id="1328" Count="2" />
+      <LineId Id="1332" Count="2" />
+      <LineId Id="1336" Count="2" />
+      <LineId Id="1340" Count="2" />
+      <LineId Id="1344" Count="2" />
+      <LineId Id="1327" Count="0" />
+      <LineId Id="1265" Count="1" />
+      <LineId Id="1264" Count="0" />
+      <LineId Id="1036" Count="1" />
+      <LineId Id="1071" Count="0" />
+      <LineId Id="9" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Check">
+      <LineId Id="81" Count="0" />
+      <LineId Id="80" Count="0" />
+      <LineId Id="84" Count="0" />
+      <LineId Id="86" Count="4" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="6" Count="0" />
+      <LineId Id="8" Count="3" />
+      <LineId Id="42" Count="1" />
+      <LineId Id="45" Count="3" />
+      <LineId Id="12" Count="5" />
+      <LineId Id="35" Count="0" />
+      <LineId Id="21" Count="4" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="72" Count="0" />
+      <LineId Id="75" Count="3" />
+      <LineId Id="50" Count="0" />
+      <LineId Id="18" Count="0" />
+      <LineId Id="34" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Cmd">
+      <LineId Id="5" Count="0" />
+      <LineId Id="11" Count="2" />
+      <LineId Id="15" Count="0" />
+      <LineId Id="48" Count="0" />
+      <LineId Id="62" Count="0" />
+      <LineId Id="58" Count="1" />
+      <LineId Id="49" Count="0" />
+      <LineId Id="63" Count="0" />
+      <LineId Id="60" Count="0" />
+      <LineId Id="92" Count="3" />
+      <LineId Id="61" Count="0" />
+      <LineId Id="52" Count="0" />
+      <LineId Id="70" Count="2" />
+      <LineId Id="57" Count="0" />
+      <LineId Id="83" Count="1" />
+      <LineId Id="111" Count="0" />
+      <LineId Id="113" Count="0" />
+      <LineId Id="119" Count="1" />
+      <LineId Id="118" Count="0" />
+      <LineId Id="114" Count="0" />
+      <LineId Id="122" Count="1" />
+      <LineId Id="121" Count="0" />
+      <LineId Id="115" Count="0" />
+      <LineId Id="125" Count="1" />
+      <LineId Id="124" Count="0" />
+      <LineId Id="116" Count="0" />
+      <LineId Id="128" Count="1" />
+      <LineId Id="127" Count="0" />
+      <LineId Id="117" Count="0" />
+      <LineId Id="130" Count="1" />
+      <LineId Id="112" Count="0" />
+      <LineId Id="82" Count="0" />
+      <LineId Id="19" Count="0" />
+      <LineId Id="103" Count="0" />
+      <LineId Id="20" Count="1" />
+      <LineId Id="23" Count="0" />
+      <LineId Id="22" Count="0" />
+      <LineId Id="10" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ctrl.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ext_DisableAxis">
+      <LineId Id="11" Count="9" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="21" Count="7" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="60" Count="2" />
+      <LineId Id="71" Count="15" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="32" Count="4" />
+      <LineId Id="63" Count="6" />
+      <LineId Id="47" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ext_EnableAxis">
+      <LineId Id="11" Count="9" />
+      <LineId Id="58" Count="0" />
+      <LineId Id="21" Count="7" />
+      <LineId Id="54" Count="0" />
+      <LineId Id="59" Count="0" />
+      <LineId Id="56" Count="0" />
+      <LineId Id="60" Count="2" />
+      <LineId Id="71" Count="15" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="55" Count="0" />
+      <LineId Id="32" Count="4" />
+      <LineId Id="63" Count="6" />
+      <LineId Id="47" Count="4" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ext_SetPosition">
+      <LineId Id="284" Count="8" />
+      <LineId Id="377" Count="2" />
+      <LineId Id="376" Count="0" />
+      <LineId Id="293" Count="78" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ext_StartExtSetpoint">
+      <LineId Id="14" Count="13" />
+      <LineId Id="97" Count="4" />
+      <LineId Id="132" Count="0" />
+      <LineId Id="103" Count="1" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="29" Count="3" />
+      <LineId Id="116" Count="15" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="82" Count="10" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="53" Count="3" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.Ext_StopExtSetpoint">
+      <LineId Id="14" Count="13" />
+      <LineId Id="97" Count="4" />
+      <LineId Id="103" Count="1" />
+      <LineId Id="28" Count="0" />
+      <LineId Id="102" Count="0" />
+      <LineId Id="29" Count="3" />
+      <LineId Id="65" Count="0" />
+      <LineId Id="67" Count="0" />
+      <LineId Id="69" Count="0" />
+      <LineId Id="71" Count="10" />
+      <LineId Id="70" Count="0" />
+      <LineId Id="68" Count="0" />
+      <LineId Id="66" Count="0" />
+      <LineId Id="82" Count="10" />
+      <LineId Id="95" Count="1" />
+      <LineId Id="93" Count="0" />
+      <LineId Id="39" Count="0" />
+      <LineId Id="53" Count="3" />
+      <LineId Id="12" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.MoveData.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.pAxis.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+    <LineIds Name="fb_MoverCtrl.State.Set">
+      <LineId Id="2" Count="0" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

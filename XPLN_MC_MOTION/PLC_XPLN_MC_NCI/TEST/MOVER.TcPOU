@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.15">
+  <POU Name="MOVER" Id="{2117d41c-bb68-4bc0-84d4-31f77add53d1}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MOVER
+VAR
+  nMover                : INT;
+
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[
+
+FOR nMover := 1 TO MAX_XPLANAR_MOVERS
+DO
+  fbMoverCtrl[nMover].MoverId   :=   TO_UINT(nMover);
+
+  fbMoverCtrl[nMover].Ctrl      REF= MoverCtrl;
+  fbMoverCtrl[nMover].State     REF= MoverState;
+  fbMoverCtrl[nMover].MoveData  REF= MoveData;
+  fbMoverCtrl[nMover].MoverInfo REF= MoverInfo[nMover];
+
+  fbMoverCtrl[nMover].Mover     REF= MAIN.fbMover[nMover];
+  fbMoverCtrl[nMover].Feedback  REF= MAIN.fbMoverFeedback[nMover];
+
+  fbMoverCtrl[nMover]();
+  fbMoverCtrl[nMover].Cycle();
+END_FOR
+]]></ST>
+    </Implementation>
+    <LineIds Name="MOVER">
+      <LineId Id="29" Count="1" />
+      <LineId Id="32" Count="14" />
+      <LineId Id="5" Count="0" />
+    </LineIds>
+  </POU>
+</TcPlcObject>

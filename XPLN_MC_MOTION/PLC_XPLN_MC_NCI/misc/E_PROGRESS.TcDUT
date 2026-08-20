@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.13">
+  <DUT Name="E_PROGRESS" Id="{e5848817-5e18-495d-9b22-ce3ca1882a69}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+TYPE E_PROGRESS :
+(
+  PROGRESS_INVALID,
+  PROGRESS_INIT           :=  1000,
+  PROGRESS_BUSY           :=  2000,
+  PROGRESS_PREPARE        :=  3000,
+  PROGRESS_STARTUP        :=  4000,
+  PROGRESS_CHECK          :=  5000,
+  PROGRESS_OCCUPIED       :=  6000,
+  PROGRESS_WORKING        :=  7000,
+  PROGRESS_STILL_WORKING  :=  8000,
+  PROGRESS_ERROR          :=  9000,
+  PROGRESS_DONE           := 10000
+)UINT;
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

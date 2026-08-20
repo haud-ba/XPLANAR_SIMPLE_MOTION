@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.13">
+  <DUT Name="ST_POS_XYC" Id="{729fcde3-4f96-4997-8f9a-9787102a315f}">
+    <Declaration><![CDATA[TYPE ST_POS_XYC :
+STRUCT
+  x   : LREAL;
+  y   : LREAL;
+  c   : LREAL;
+  cDirection  : Tc3_Mc3PlanarMotion.MC_DIRECTION := 0;
+END_STRUCT
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>
