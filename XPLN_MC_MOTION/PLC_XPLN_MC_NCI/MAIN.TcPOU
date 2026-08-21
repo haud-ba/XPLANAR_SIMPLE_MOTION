@@ -7,12 +7,22 @@
 //    XPLN_MC_NCI project
 //    - MC function blocks only
 //      - a mover moves always in X and Y (during transport movement)
-//        - the fb_Mover class does that and only that
 //
 //      - the cyclic wrapper extends the base class and adds the external setpoint connection
 //        - the NCI is used by hand, so setting the 3D Group, Loading the *.nc file is done manually in the IDE
+//          - go to "Group 4/3D-Online" set the axis assignement
+//          - go to "Channel 2/Override" set the axis override to 100%
+//          - go to "G0 Interpreter/Editor" and load the *.nc file
 // 
 //    - simple example of how to get a mover to move via external setpoint generator
+//
+//    - _bCycleStart: activates movement of both movers to the 3 positions
+//    - _bCyclePause: when active the sequence is halted after one mover did its movement.
+//    - _bCycleReset: quits errors on movers and searches for them in a 75mm range around one of the three positions
+//
+//---------------------------------------------------------------------------------------------------------------
+//    - NOTE: no recovery programmed, so if you remove a mover from the table, 
+//            you have to do the redetection of the movers manually in the XPlanarProcessingUnit
 //
 //---------------------------------------------------------------------------------------------------------------
 //    MIT License

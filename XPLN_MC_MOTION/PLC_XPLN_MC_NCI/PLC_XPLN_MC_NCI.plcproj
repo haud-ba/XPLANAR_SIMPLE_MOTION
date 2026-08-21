@@ -60,6 +60,9 @@
     <Compile Include="Mover\fb_MoverCtrl.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Mover\types\E_MOVER_CHECK.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Mover\types\E_MOVER_CTRL.TcDUT">
       <SubType>Code</SubType>
     </Compile>

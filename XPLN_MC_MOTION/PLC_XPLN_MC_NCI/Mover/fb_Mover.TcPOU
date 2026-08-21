@@ -18,9 +18,8 @@
 //---------------------------------------------------------------------------------------------------------------
 FUNCTION_BLOCK fb_Mover
 VAR
+  _eCheck           : E_MOVER_CHECK;
   _nMoverId         : UINT;
-
-  _sState           : STRING;
 
   _Mover            : REFERENCE TO Tc3_Mc3PlanarMotion.MC_PlanarMover;
   _Feedback         : REFERENCE TO Tc3_Mc3PlanarMotion.MC_PlanarFeedback;
@@ -52,23 +51,23 @@ END_VAR
 
 IF NOT (_nMoverId > 0)
 THEN
-  _sState                     := 'Mover: missing ID';
+  _eCheck                     := E_MOVER_CHECK.MOVER_ID_INVALID;
   RETURN;
 END_IF
 
 IF NOT __ISVALIDREF(_Mover)
 THEN
-  _sState                     := 'Mover: missing pointer';
+  _eCheck                     := E_MOVER_CHECK.REFERENCE_AXIS_REF_INVALID;
   RETURN;
 END_IF
 
 IF NOT __ISVALIDREF(_stInfo)
 THEN
-  _sState                     := '_stInfo: missing pointer';
+  _eCheck                     := E_MOVER_CHECK.REFERENCE_INFO_INVALID;
   RETURN;
 END_IF
 
-_sState                       := 'CHECK_DONE';
+_eCheck                       := E_MOVER_CHECK.CHECK_DONE;
 Check                         := TRUE;
 ]]></ST>
       </Implementation>
@@ -714,14 +713,19 @@ Reset                         := _eState;
       <LineId Id="87" Count="0" />
       <LineId Id="86" Count="0" />
       <LineId Id="88" Count="0" />
-      <LineId Id="92" Count="1" />
+      <LineId Id="95" Count="0" />
+      <LineId Id="93" Count="0" />
       <LineId Id="89" Count="0" />
       <LineId Id="84" Count="0" />
-      <LineId Id="13" Count="4" />
+      <LineId Id="13" Count="1" />
+      <LineId Id="96" Count="0" />
+      <LineId Id="16" Count="1" />
       <LineId Id="35" Count="0" />
-      <LineId Id="21" Count="4" />
+      <LineId Id="21" Count="1" />
+      <LineId Id="97" Count="0" />
+      <LineId Id="24" Count="1" />
+      <LineId Id="98" Count="0" />
       <LineId Id="63" Count="0" />
-      <LineId Id="18" Count="0" />
       <LineId Id="34" Count="0" />
       <LineId Id="5" Count="0" />
     </LineIds>
